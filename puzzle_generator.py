@@ -14,7 +14,7 @@ X, Y, Z = 'x', 'y', 'z'
 def main():
     for i in range(30):
 
-        chars = set(random.sample(string.ascii_lowercase, random.randint(5, 26)))
+        chars = set(random.sample(string.ascii_uppercase, random.randint(5, 26)))
         grid = HexGrid(chars)
         useSpecialHint = random.choice([True, False])
         generateSolution(grid, useSpecialHint)
@@ -126,7 +126,7 @@ def generateSolution(grid, useSpecialSolution = True):
 
 
 def insertSpecialSolution(row, chars):
-    hint = 'textalgorithm'
+    hint = 'TEXTALGORITHM'
     badChars = copy(chars)
     for cell, goodChar in zip(row, hint):
         cell.allowed.add(goodChar)
@@ -198,10 +198,9 @@ def fixRegexPartSyntax(regexPart, chars):
         if len(singleChars) > 1:
             singleChars =  '[' + singleChars  + ']'
         if sequences:
-            return '(' + '|'.join(sequences) + '|' + singleChars + ')'
+            return '(' + '|'.join(sequences) + ('|' + singleChars if singleChars else '') + ')'
         else:
             return singleChars
-        #return '[{}]'.format(regexPart.replace('|', '').replace('.', str(chars.difference(set(regexPart)).pop())))
     else:
         return regexPart
 
