@@ -2,24 +2,36 @@ import random
 import string
 from copy import copy, deepcopy
 from itertools import product
+import json
+from time import time
+from pprint import pprint
 import numpy as np
 from regex_finder import findregex
 
 MAX_WIDTH = 13
-#chars = set(random.sample(string.ascii_lowercase, 10))
-chars = set(string.ascii_lowercase)
+X, Y, Z = 'x', 'y', 'z'
 
 def main():
+    for i in range(30):
 
-    grid = HexGrid()
+        chars = set(random.sample(string.ascii_lowercase, random.randint(5, 26)))
+        grid = HexGrid(chars)
+        useSpecialHint = random.choice([True, False])
+        generateSolution(grid, useSpecialHint)
 
-    generateSolution(grid)
-    print(generateRegexHints(grid))
+        hints = generateRegexHints(grid)
+        board_data = {'size':MAX_WIDTH, 'name':str(round(time() * 1000000)), 'x':hints[X], 'y':hints[Y], 'z':hints[Z]}
+        pprint(board_data)
+        filename = 'puzzles/' + board_data['name'] + '.json'
+        with open(filename, 'w') as f:
+            json.dump(board_data, f)
+
 
 
 class HexGrid:
-    def __init__(self):
+    def __init__(self, chars):
         self.grid = self.constructGrid()
+        self.chars = chars
 
     def constructGrid(self):
         grid = []
@@ -33,13 +45,13 @@ class HexGrid:
         return grid
 
     def iterDirection(self, direction):
-        if direction == 'X':
+        if direction == X:
             for row in self.iterXDirection():
                 yield row
-        elif direction == 'Y':
+        elif direction == Y:
             for row in self.iterYDirection():
                 yield row
-        elif direction == 'Z':
+        elif direction == Z:
             for row in self.iterZDirection():
                 yield row
 
@@ -97,7 +109,7 @@ class Cell:
 def generateSolution(grid, useSpecialSolution = True):
     for row in grid.iterYDirection():
         if useSpecialSolution and len(row) == MAX_WIDTH:
-            insertSpecialSolution(row)
+            insertSpecialSolution(row, grid.chars)
         else:
             for cell in row:
                 #goodCount = random.randint(1,2)
@@ -105,15 +117,15 @@ def generateSolution(grid, useSpecialSolution = True):
                 #badCount = random.randint(1,2)
                 badCount = 1 if random.random() > 0.3 else 2
                 for i in range(goodCount):
-                    goodChar = random.sample(chars - cell.notAllowed, 1)[0]
+                    goodChar = random.sample(grid.chars - cell.notAllowed, 1)[0]
                     cell.addConstraints(allowedChar = goodChar)
                 for i in range(badCount):
-                    badChar = random.sample(chars - cell.notAllowed, 1)[0]
+                    badChar = random.sample(grid.chars - cell.notAllowed, 1)[0]
                     cell.addConstraints(disallowedChar = badChar)
 
 
 
-def insertSpecialSolution(row):
+def insertSpecialSolution(row, chars):
     hint = 'textalgorithm'
     badChars = copy(chars)
     for cell, goodChar in zip(row, hint):
@@ -126,8 +138,8 @@ def insertSpecialSolution(row):
 
 
 def generateRegexHints(grid):
-    hints = {'X':[], 'Y':[], 'Z':[]}
-    for d in ('XYZ'):
+    hints = {X:[], Y:[], Z:[]}
+    for d in (X, Y, Z):
         for row in grid.iterDirection(d):
             allowedStrings = getAllowedStrings(row)
             notAllowedStrings = getNotAllowedStrings(row)
@@ -148,9 +160,9 @@ def generateRegexHints(grid):
                 lLast = lLast - wLast
 
                 regex += '.*'
-                regex += fixRegexPartSyntax(findregex(wFirst, lFirst))
+                regex += fixRegexPartSyntax(findregex(wFirst, lFirst), grid.chars)
                 regex += '.*'
-                regex += fixRegexPartSyntax(findregex(wLast, lLast))
+                regex += fixRegexPartSyntax(findregex(wLast, lLast), grid.chars)
                 regex += '.*'
             else:
                 wFirst = set(map(lambda s: s[:split], allowedStrings))
@@ -166,18 +178,18 @@ def generateRegexHints(grid):
                 lLast = lLast - wLast
 
                 regex += '.*'
-                regex += fixRegexPartSyntax(findregex(wFirst, lFirst))
+                regex += fixRegexPartSyntax(findregex(wFirst, lFirst), grid.chars)
                 regex += '.*'
-                regex += fixRegexPartSyntax(findregex(wMid, lMid))
+                regex += fixRegexPartSyntax(findregex(wMid, lMid), grid.chars)
                 regex += '.*'
-                regex += fixRegexPartSyntax(findregex(wLast, lLast))
+                regex += fixRegexPartSyntax(findregex(wLast, lLast), grid.chars)
                 regex += '.*'
             regex = regex.replace('^', '')
             regex = regex.replace('$', '')
             hints[d].append(regex)
     return hints
 
-def fixRegexPartSyntax(regexPart):
+def fixRegexPartSyntax(regexPart, chars):
     if regexPart.find('|') > -1:
         orComponents = regexPart.split('|')
         singleChars = [c for c in orComponents if len(c) < 2]
