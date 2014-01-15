@@ -1,12 +1,13 @@
 import random
 import string
-from copy import deepcopy
+from copy import copy, deepcopy
 from itertools import product
 import numpy as np
 from regex_finder import findregex
 
 MAX_WIDTH = 13
-chars = set(string.ascii_uppercase)
+#chars = set(random.sample(string.ascii_lowercase, 10))
+chars = set(string.ascii_lowercase)
 
 def main():
 
@@ -19,14 +20,6 @@ def main():
 class HexGrid:
     def __init__(self):
         self.grid = self.constructGrid()
-
-    def iterXYZ(self):
-        for row in self.iterXDirection():
-            yield row
-        for row in self.iterYDirection():
-            yield row
-        for row in self.iterZDirection():
-            yield row
 
     def constructGrid(self):
         grid = []
@@ -51,7 +44,7 @@ class HexGrid:
                 yield row
 
     def iterXDirection(self):
-        # SW->NE rows
+        # rows going SW->NE
         ar = np.array(self.grid)
         fromIdx = MAX_WIDTH // 2
         toIdx = -MAX_WIDTH // 2
@@ -62,7 +55,7 @@ class HexGrid:
             yield cellRow
 
     def iterYDirection(self):
-        # E->W rows
+        # rows going E->W
         for row in self.grid:
             cellRow = []
             for cell in row:
@@ -73,7 +66,7 @@ class HexGrid:
             yield cellRow
 
     def iterZDirection(self):
-        # NW->SE rows
+        # rows going NW->SE
         for col in range(MAX_WIDTH):
             cellRow = []
             for row in range(MAX_WIDTH):
@@ -95,12 +88,6 @@ class Cell:
         return str(self.cid)
 
     def addConstraints(self, allowedChar = None, disallowedChar = None):
-        if allowedChar == disallowedChar:
-            raise ValueError('Allowed and not allowed characters must be different')
-        if allowedChar in self.notAllowed:
-            raise ValueError('Can\'t add allowed character')
-        if disallowedChar in self.allowed:
-            raise ValueError('Can\'t add disallowed character')
         if allowedChar:
             self.allowed.add(allowedChar)
         if disallowedChar:
@@ -113,28 +100,28 @@ def generateSolution(grid, useSpecialSolution = True):
             insertSpecialSolution(row)
         else:
             for cell in row:
-                goodCount = random.randint(1,1)
+                #goodCount = random.randint(1,2)
                 goodCount = 1 if random.random() > 0.3 else 2
-                badCount = random.randint(1,1)
+                #badCount = random.randint(1,2)
                 badCount = 1 if random.random() > 0.3 else 2
                 for i in range(goodCount):
-                    goodChar = random.sample(chars - cell.allowed - cell.notAllowed, 1)[0]
+                    goodChar = random.sample(chars - cell.notAllowed, 1)[0]
                     cell.addConstraints(allowedChar = goodChar)
                 for i in range(badCount):
-                    badChar = random.sample(chars - cell.allowed - cell.notAllowed, 1)[0]
+                    badChar = random.sample(chars - cell.notAllowed, 1)[0]
                     cell.addConstraints(disallowedChar = badChar)
 
 
 
 def insertSpecialSolution(row):
-    hint = 'TEXTALGORITHM'
-    badChars = set(string.ascii_uppercase)
+    hint = 'textalgorithm'
+    badChars = copy(chars)
     for cell, goodChar in zip(row, hint):
         cell.allowed.add(goodChar)
-        badCount = random.randint(1,2)
+        #badCount = random.randint(1,2)
         badCount = 1 if random.random() > 0.3 else 2
         for i in range(badCount):
-            badChar = random.sample(chars - cell.allowed - cell.notAllowed, 1)[0]
+            badChar = random.sample(chars - cell.notAllowed, 1)[0]
             cell.addConstraints(disallowedChar = badChar)
 
 
@@ -144,12 +131,67 @@ def generateRegexHints(grid):
         for row in grid.iterDirection(d):
             allowedStrings = getAllowedStrings(row)
             notAllowedStrings = getNotAllowedStrings(row)
-            print('alowed', allowedStrings)
-            print('not alowed', notAllowedStrings)
+            print('allowed', allowedStrings)
+            print('not allowed', notAllowedStrings)
             print()
-            hints[d].append(findregex(allowedStrings, notAllowedStrings))
+
+            split = 2 if len(row) < 9 else 3
+            regex = ''
+            if split == 2:
+                wFirst = set(map(lambda s: s[:split], allowedStrings))
+                wLast = set(map(lambda s: s[split:], allowedStrings))
+
+                lFirst = set(map(lambda s: s[:split], notAllowedStrings))
+                lLast = set(map(lambda s: s[split:], notAllowedStrings))
+
+                lFirst = lFirst - wFirst
+                lLast = lLast - wLast
+
+                regex += '.*'
+                regex += fixRegexPartSyntax(findregex(wFirst, lFirst))
+                regex += '.*'
+                regex += fixRegexPartSyntax(findregex(wLast, lLast))
+                regex += '.*'
+            else:
+                wFirst = set(map(lambda s: s[:split], allowedStrings))
+                wMid = set(map(lambda s: s[split:split*2], allowedStrings))
+                wLast = set(map(lambda s: s[split*2:], allowedStrings))
+
+                lFirst = set(map(lambda s: s[:split], notAllowedStrings))
+                lMid = set(map(lambda s: s[split:split*2], notAllowedStrings))
+                lLast = set(map(lambda s: s[split:], notAllowedStrings))
+
+                lFirst = lFirst - wFirst
+                lMid = lMid - wMid
+                lLast = lLast - wLast
+
+                regex += '.*'
+                regex += fixRegexPartSyntax(findregex(wFirst, lFirst))
+                regex += '.*'
+                regex += fixRegexPartSyntax(findregex(wMid, lMid))
+                regex += '.*'
+                regex += fixRegexPartSyntax(findregex(wLast, lLast))
+                regex += '.*'
+            regex = regex.replace('^', '')
+            regex = regex.replace('$', '')
+            hints[d].append(regex)
     return hints
 
+def fixRegexPartSyntax(regexPart):
+    if regexPart.find('|') > -1:
+        orComponents = regexPart.split('|')
+        singleChars = [c for c in orComponents if len(c) < 2]
+        sequences = [c for c in orComponents if len(c) > 1]
+        singleChars = ''.join(singleChars).replace('.', str(chars.difference(set(singleChars)).pop()))
+        if len(singleChars) > 1:
+            singleChars =  '[' + singleChars  + ']'
+        if sequences:
+            return '(' + '|'.join(sequences) + '|' + singleChars + ')'
+        else:
+            return singleChars
+        #return '[{}]'.format(regexPart.replace('|', '').replace('.', str(chars.difference(set(regexPart)).pop())))
+    else:
+        return regexPart
 
 def getAllowedStrings(row):
     for cell in row:
@@ -166,24 +208,6 @@ def getNotAllowedStrings(row):
     strings = set(map(''.join, product(*notAllowed)))
     return set(strings)
 
-winners = {'DPGHGZM', 'DNGHGZM', 'DNGHVZM', 'DNOHGZM', 'DPOHGZM', 'PNOHVZM', 'PPOHGZM', 'PNGHGZM', 'PPGHVZM'}
-losers = {'ELHAHRCD', 'ELHAHIVD', 'ELHAJICD', 'ELHAHICD', 'ELHAJIVD', 'ELHPHIVD'}
-winners = set('''washington adams jefferson jefferson madison madison monroe
-monroe adams jackson jackson vanburen harrison polk taylor pierce buchanan
-lincoln lincoln grant grant hayes garfield cleveland harrison cleveland mckinley
- mckinley roosevelt taft wilson wilson harding coolidge hoover roosevelt
-roosevelt roosevelt roosevelt truman eisenhower eisenhower kennedy johnson nixon
-nixon carter reagan reagan bush clinton clinton bush bush obama obama'''.split())
-
-losers = set('''clinton jefferson adams pinckney pinckney clinton king adams
-jackson adams clay vanburen vanburen clay cass scott fremont breckinridge
-mcclellan seymour greeley tilden hancock blaine cleveland harrison bryan bryan
-parker bryan roosevelt hughes cox davis smith hoover landon wilkie dewey dewey
-stevenson stevenson nixon goldwater humphrey mcgovern ford carter mondale
-dukakis bush dole gore kerry mccain romney'''.split())
-losers = losers - winners
-print(findregex(winners, losers))
-
 
 if __name__ == '__main__':
-    pass#main()
+    main()
