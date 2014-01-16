@@ -1,10 +1,10 @@
 import random
 import string
 from copy import copy, deepcopy
-from itertools import product
 import json
 from time import time
 from pprint import pprint
+import re
 import numpy as np
 from regex_finder import findregex
 
@@ -14,17 +14,23 @@ X, Y, Z = 'x', 'y', 'z'
 def main():
     for i in range(30):
 
-        chars = set(random.sample(string.ascii_uppercase, random.randint(5, 26)))
+        chars = set(random.sample(string.ascii_uppercase, random.randint(8, 26)))
         grid = HexGrid(chars)
         useSpecialHint = random.choice([True, False])
         generateSolution(grid, useSpecialHint)
 
         hints = generateRegexHints(grid)
-        board_data = {'size':MAX_WIDTH, 'name':str(round(time() * 1000000)), 'x':hints[X], 'y':hints[Y], 'z':hints[Z]}
+        name = str(round(time() * 1000000))
+        board_data = {'size':MAX_WIDTH, 'name':name, 'x':hints[X], 'y':hints[Y], 'z':hints[Z]}
+        solution = {'rows':getSampleSolution(grid)}
         pprint(board_data)
-        filename = 'puzzles/' + board_data['name'] + '.json'
-        with open(filename, 'w') as f:
+        pprint(solution)
+        puzzlename = 'puzzles/' + board_data['name'] + '.json'
+        solutionName = 'puzzles/' + board_data['name'] + '_solution.json'
+        with open(puzzlename, 'w') as f:
             json.dump(board_data, f)
+        with open(solutionName, 'w') as f:
+            json.dump(solution, f)
 
 
 
@@ -112,15 +118,15 @@ def generateSolution(grid, useSpecialSolution = True):
             insertSpecialSolution(row, grid.chars)
         else:
             for cell in row:
-                #goodCount = random.randint(1,2)
-                goodCount = 1 if random.random() > 0.3 else 2
-                #badCount = random.randint(1,2)
-                badCount = 1 if random.random() > 0.3 else 2
+                goodCount = random.randint(1,4)
+                #goodCount = 1 if random.random() > 0.3 else 2
+                badCount = random.randint(1,4)
+                #badCount = 1 if random.random() > 0.3 else 2
                 for i in range(goodCount):
-                    goodChar = random.sample(grid.chars - cell.notAllowed, 1)[0]
+                    goodChar = random.sample(grid.chars - cell.allowed - cell.notAllowed, 1)[0]
                     cell.addConstraints(allowedChar = goodChar)
                 for i in range(badCount):
-                    badChar = random.sample(grid.chars - cell.notAllowed, 1)[0]
+                    badChar = random.sample(grid.chars - cell.allowed - cell.notAllowed, 1)[0]
                     cell.addConstraints(disallowedChar = badChar)
 
 
@@ -141,68 +147,52 @@ def generateRegexHints(grid):
     hints = {X:[], Y:[], Z:[]}
     for d in (X, Y, Z):
         for row in grid.iterDirection(d):
-            allowedStrings = getAllowedStrings(row)
-            notAllowedStrings = getNotAllowedStrings(row)
-            print('allowed', allowedStrings)
-            print('not allowed', notAllowedStrings)
-            print()
-
-            split = 2 if len(row) < 9 else 3
             regex = ''
-            if split == 2:
-                wFirst = set(map(lambda s: s[:split], allowedStrings))
-                wLast = set(map(lambda s: s[split:], allowedStrings))
+            for c in row:
+                winners = set(c.allowed)
+                losers = set(c.notAllowed) - winners
+                regex += findregex(winners, losers)
+            regex = shorten(regex, grid.chars)
 
-                lFirst = set(map(lambda s: s[:split], notAllowedStrings))
-                lLast = set(map(lambda s: s[split:], notAllowedStrings))
 
-                lFirst = lFirst - wFirst
-                lLast = lLast - wLast
-
-                regex += '.*'
-                regex += fixRegexPartSyntax(findregex(wFirst, lFirst), grid.chars)
-                regex += '.*'
-                regex += fixRegexPartSyntax(findregex(wLast, lLast), grid.chars)
-                regex += '.*'
-            else:
-                wFirst = set(map(lambda s: s[:split], allowedStrings))
-                wMid = set(map(lambda s: s[split:split*2], allowedStrings))
-                wLast = set(map(lambda s: s[split*2:], allowedStrings))
-
-                lFirst = set(map(lambda s: s[:split], notAllowedStrings))
-                lMid = set(map(lambda s: s[split:split*2], notAllowedStrings))
-                lLast = set(map(lambda s: s[split:], notAllowedStrings))
-
-                lFirst = lFirst - wFirst
-                lMid = lMid - wMid
-                lLast = lLast - wLast
-
-                regex += '.*'
-                regex += fixRegexPartSyntax(findregex(wFirst, lFirst), grid.chars)
-                regex += '.*'
-                regex += fixRegexPartSyntax(findregex(wMid, lMid), grid.chars)
-                regex += '.*'
-                regex += fixRegexPartSyntax(findregex(wLast, lLast), grid.chars)
-                regex += '.*'
-            regex = regex.replace('^', '')
-            regex = regex.replace('$', '')
             hints[d].append(regex)
     return hints
 
-def fixRegexPartSyntax(regexPart, chars):
-    if regexPart.find('|') > -1:
-        orComponents = regexPart.split('|')
-        singleChars = [c for c in orComponents if len(c) < 2]
-        sequences = [c for c in orComponents if len(c) > 1]
-        singleChars = ''.join(singleChars).replace('.', str(chars.difference(set(singleChars)).pop()))
-        if len(singleChars) > 1:
-            singleChars =  '[' + singleChars  + ']'
-        if sequences:
-            return '(' + '|'.join(sequences) + ('|' + singleChars if singleChars else '') + ')'
+
+def shorten(regex, chars):
+    regex = regex.replace('^', '')
+    regex = regex.replace('$', '')
+    components = regex.split('|')
+    newComponents = []
+    orGroup = ''
+    for c in components:
+        if len(c) < 2:
+            orGroup += c
+        elif len(c) < 3:
+            newComponents.append(orGroupToRe(orGroup))
+            orGroup = ''
         else:
-            return singleChars
+            newComponents.append(orGroupToRe(orGroup))
+            orGroup = ''
+            newComponents.append(orGroupToRe(c))
+    regex = ''.join(newComponents)
+    regex = re.sub(r'\.\*(\.\*)+', '.*', regex)
+    regex = regex.replace('**', '*')
+    return regex
+
+
+def orGroupToRe(orGroup):
+    if orGroup == '':
+        return ''
+    elif len(orGroup) == 1:
+        return orGroup if random.random() > 0 else '.'
+    elif len(set(orGroup)) == 1:
+        return '{}*'.format(list(orGroup).pop())
+    elif len(set(orGroup)) > 2:
+        return '.*'
     else:
-        return regexPart
+        return '[{}]*'.format(''.join(sorted(set(orGroup))))
+
 
 def getAllowedStrings(row):
     for cell in row:
@@ -220,5 +210,16 @@ def getNotAllowedStrings(row):
     return set(strings)
 
 
+def getSampleSolution(grid):
+    rowSolutions = []
+    for row in grid.iterDirection(Y):
+        rowSolution = []
+        for cell in row:
+            rowSolution.append(random.choice(list(cell.allowed)))
+        rowSolutions.append(rowSolution)
+    return rowSolutions
+
+
 if __name__ == '__main__':
+    pass
     main()
