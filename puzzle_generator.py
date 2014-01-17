@@ -12,11 +12,11 @@ MAX_WIDTH = 13
 X, Y, Z = 'x', 'y', 'z'
 
 def main():
-    for i in range(30):
+    for i in range(10):
 
-        chars = set(random.sample(string.ascii_uppercase, random.randint(8, 26)))
+        chars = set(random.sample(string.ascii_uppercase, random.randint(8, 16)))
         grid = HexGrid(chars)
-        useSpecialHint = random.choice([True, False])
+        useSpecialHint = False#random.choice([True, False])
         generateSolution(grid, useSpecialHint)
 
         hints = generateRegexHints(grid)
@@ -41,7 +41,7 @@ class HexGrid:
 
     def constructGrid(self):
         grid = []
-        gridRow = [Cell(i) for i in range(1, MAX_WIDTH + 1)]
+        gridRow = [Cell() for i in range(1, MAX_WIDTH + 1)]
         frontBuffer = list(range(MAX_WIDTH // 2, 0, -1)) + [0] * (MAX_WIDTH // 2 + 1)
         backBuffer = list(reversed(frontBuffer))
         for i in range(MAX_WIDTH):
@@ -97,19 +97,22 @@ class HexGrid:
 
 
 class Cell:
-    def __init__(self, cid = 0):
-        self.cid = cid
+    def __init__(self):
+        self.regex = ''
         self.allowed = set()
         self.notAllowed = set()
 
-    def __repr__(self):
-        return str(self.cid)
 
     def addConstraints(self, allowedChar = None, disallowedChar = None):
         if allowedChar:
             self.allowed.add(allowedChar)
         if disallowedChar:
             self.notAllowed.add(disallowedChar)
+
+    def compactRegex(self):
+        self.regex = self.regex.replace('|', '')
+        self.regex = self.regex.replace('^', '')
+        self.regex = self.regex.replace('$', '')
 
 
 def generateSolution(grid, useSpecialSolution = True):
@@ -118,9 +121,9 @@ def generateSolution(grid, useSpecialSolution = True):
             insertSpecialSolution(row, grid.chars)
         else:
             for cell in row:
-                goodCount = random.randint(1,4)
+                goodCount = random.randint(1,3)
                 #goodCount = 1 if random.random() > 0.3 else 2
-                badCount = random.randint(1,4)
+                badCount = random.randint(1,3)
                 #badCount = 1 if random.random() > 0.3 else 2
                 for i in range(goodCount):
                     goodChar = random.sample(grid.chars - cell.allowed - cell.notAllowed, 1)[0]
@@ -128,6 +131,9 @@ def generateSolution(grid, useSpecialSolution = True):
                 for i in range(badCount):
                     badChar = random.sample(grid.chars - cell.allowed - cell.notAllowed, 1)[0]
                     cell.addConstraints(disallowedChar = badChar)
+                cell.regex = findregex(cell.allowed, cell.notAllowed - cell.allowed)
+                assert(cell.regex != '')
+                cell.compactRegex()
 
 
 
@@ -147,51 +153,71 @@ def generateRegexHints(grid):
     hints = {X:[], Y:[], Z:[]}
     for d in (X, Y, Z):
         for row in grid.iterDirection(d):
+            components = []
             regex = ''
             for c in row:
-                winners = set(c.allowed)
-                losers = set(c.notAllowed) - winners
-                regex += findregex(winners, losers)
-            regex = shorten(regex, grid.chars)
-
+                components.append(c.regex)
+            regex = shorten('-'.join(components))
 
             hints[d].append(regex)
     return hints
 
 
-def shorten(regex, chars):
-    regex = regex.replace('^', '')
-    regex = regex.replace('$', '')
-    components = regex.split('|')
-    newComponents = []
-    orGroup = ''
+def shorten(regex):
+    components = regex.split('-')
+    #print(1, 'components:', components)
+    orGroups = []
+    regex = ''
     for c in components:
-        if len(c) < 2:
-            orGroup += c
-        elif len(c) < 3:
-            newComponents.append(orGroupToRe(orGroup))
-            orGroup = ''
+        #print(2, 'component:', c)
+        if rnd(0.7):
+            orGroups.append(c)
         else:
-            newComponents.append(orGroupToRe(orGroup))
-            orGroup = ''
-            newComponents.append(orGroupToRe(c))
-    regex = ''.join(newComponents)
+            regex += mergeOrGroups(orGroups)
+            #print(3, 'regex:', regex)
+            regex += mergeOrGroups([c])
+            #print(4, 'regex:', regex)
+            orGroups = []
+
+    regex += mergeOrGroups(orGroups)
+    #print(6, 'regex:', regex)
+
+    regex = regex.replace('..*', '.*')
     regex = re.sub(r'\.\*(\.\*)+', '.*', regex)
     regex = regex.replace('**', '*')
+    #print(8, 'regex:', regex)
     return regex
 
 
-def orGroupToRe(orGroup):
-    if orGroup == '':
+def mergeOrGroups(orGroups):
+    #print(5, 'orGroups:', orGroups)
+    if len(orGroups) == 0:
         return ''
-    elif len(orGroup) == 1:
-        return orGroup if random.random() > 0 else '.'
-    elif len(set(orGroup)) == 1:
-        return '{}*'.format(list(orGroup).pop())
-    elif len(set(orGroup)) > 2:
-        return '.*'
+    elif len(orGroups) == 1:
+        rePart = orGroups.pop()
+        if len(rePart) > 2:
+            return '.'
+        elif len(rePart) > 1:
+            return '[{}]'.format(rePart)
+        else:
+            return rePart
     else:
-        return '[{}]*'.format(''.join(sorted(set(orGroup))))
+        repeatSet = set(''.join(orGroups))
+        if len(repeatSet) == 1:
+            return '{}*'.format(repeatSet.pop())
+        elif len(repeatSet) > 3:
+            return '.*'
+        else:
+            if rnd(0.2):
+                return '.*'
+            else:
+                repeat = '+' if rnd(0.8) else '*'
+                return '[{}]{}'.format(''.join(sorted(repeatSet)), repeat)
+
+
+
+def rnd(x = 0.5):
+    return random.random() < x
 
 
 def getAllowedStrings(row):
